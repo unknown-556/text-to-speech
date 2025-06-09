@@ -1,23 +1,44 @@
-const { convertTextToSpeech } = require('../utils/tts');
+const fs = require('fs/promises');
+const path = require('path');
+const pdfParse = require('pdf-parse');
+const mammoth = require('mammoth');
 const cloudinary = require('../config/cloudinary');
-const fs = require('fs');
+const { convertTextToSpeech } = require('../utils/tts');
 
 const convertController = async (req, res) => {
   try {
-    const { text } = req.body;
-    if (!text) return res.status(400).json({ error: 'Text is required' });
+    const file = req.file;
+    if (!file) return res.status(400).json({ error: 'No file uploaded' });
 
-    // Convert to speech
-    const audioPath = await convertTextToSpeech(text);
+    const ext = path.extname(file.originalname).toLowerCase();
+    let textContent = '';
 
-    // Upload to Cloudinary
+    if (ext === '.pdf') {
+      const dataBuffer = await fs.readFile(file.path);
+      const data = await pdfParse(dataBuffer);
+      textContent = data.text;
+    } else if (ext === '.docx') {
+      const data = await mammoth.extractRawText({ path: file.path });
+      textContent = data.value;
+    } else {
+      await fs.unlink(file.path);
+      return res.status(400).json({ error: 'Unsupported file type' });
+    }
+
+    if (!textContent.trim()) {
+      await fs.unlink(file.path);
+      return res.status(400).json({ error: 'No readable text in document' });
+    }
+
+    const audioPath = await convertTextToSpeech(textContent);
+
     const result = await cloudinary.uploader.upload(audioPath, {
-      resource_type: 'video', // audio uploads as video in Cloudinary
+      resource_type: 'video',
       folder: 'tts-audio',
     });
 
-    // Delete local file
-    fs.unlinkSync(audioPath);
+    await fs.unlink(file.path);
+    await fs.unlink(audioPath);
 
     res.json({ audioUrl: result.secure_url });
   } catch (error) {
