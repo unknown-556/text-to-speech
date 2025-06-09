@@ -40,7 +40,11 @@ const convertController = async (req, res) => {
     await fs.unlink(file.path);
     await fs.unlink(audioPath);
 
-    res.json({ audioUrl: result.secure_url });
+    res.json({
+      audioUrl: result.secure_url,
+      text: textContent.trim(),
+    });
+    
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Something went wrong' });
